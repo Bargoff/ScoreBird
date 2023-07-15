@@ -1,4 +1,5 @@
 *.pyc
+.idea
 backups/
 old_backups/
 test/gameboards

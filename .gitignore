@@ -1,0 +1,5 @@
+*.pyc
+backups/
+old_backups/
+test/gameboards
+test/scoreboards

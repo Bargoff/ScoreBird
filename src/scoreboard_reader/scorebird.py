@@ -101,8 +101,8 @@ def getTournamentDisplay(scoreboard):
     result_dict = {'winner': scoreboard.winner,
                    'player1': scoreboard.players_dict[0].player_name,
                    'score1': scoreboard.players_dict[0].final_score.score,
-                   'player2': scoreboard.players_dict[0].player_name,
-                   'score2': scoreboard.players_dict[0].final_score.score
+                   'player2': scoreboard.players_dict[1].player_name,
+                   'score2': scoreboard.players_dict[1].final_score.score
                    }
 
     print(result_dict)

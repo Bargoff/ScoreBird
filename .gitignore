@@ -1,6 +1,4 @@
 *.pyc
 .idea
-backups/
-old_backups/
-test/gameboards
-test/scoreboards
+.env
+test/

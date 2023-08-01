@@ -2,16 +2,10 @@ import re
 import os
 import cv2
 import time
-from enum import Enum
 import tesserocr
 
-from src.utils.utils import timestamp
+from src.utils.utils import timestamp, Mode
 from src.scoreboard_reader.scoreboard import Scoreboard
-
-class Mode(Enum):
-    DISPLAY = 0
-    NO_DISPLAY = 1
-    TESTING = 2
 
 
 def scorebird(filename, tournament_name=None, mentioned_players=None, mode=Mode.NO_DISPLAY):
@@ -61,6 +55,7 @@ def scorebird(filename, tournament_name=None, mentioned_players=None, mode=Mode.
                         all_results, player_csvs = getDetailedDisplay(scoreboard, file_num)
 
 
+        # TODO Update testing usage
         if mode == Mode.TESTING and scoreboard.scoreboard_correct:
             print('TESTING success')
             return player_csvs
@@ -168,4 +163,4 @@ if __name__ == '__main__':
     submissions_dir = 'C:\\submissions\\'
     filename = submissions_dir + '12.png'
 
-    scorebird(filename=filename, tournament_name='QIQ', mode=Mode.DISPLAY)
+    result_dict = scorebird(filename=filename, tournament_name='QIQ', mode=Mode.DISPLAY)

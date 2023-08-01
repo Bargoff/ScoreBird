@@ -1,6 +1,9 @@
 # ScoreBird
 A digital Wingspan scoreboard and gameboard helper tool.
 
+![scoreboard](scoreboard_example1.png)
+![gameboard](gameboard_example1.png)
+
 ## Required Packages
 
 - [numpy](https://pypi.org/project/numpy/)
@@ -35,7 +38,7 @@ The scorebird() function can also be called by a separate codebase or tool.  The
     - Mode.NO_DISPLAY: Do not display the screenshot and what has been detected.  Good for discord bot calls where display would be useless.
     - Mode.TESTING: Internal testing mode for mass screenshot testing and accuracy checking.
     - Mode.DISPLAY: Displays the screenshot showing the scores and names detected.
-      ![scoreboard](scoreboard_example.png)
+      ![scoreboard](scoreboard_example2.png)
 
 #### Returns
 
@@ -72,7 +75,7 @@ The boardbird() function can also be called by a separate codebase or tool.  The
     - Mode.NO_DISPLAY: Do not display the screenshot and what has been detected.  Good for discord bot calls where display would be useless.
     - Mode.TESTING: Internal testing mode for mass screenshot testing and accuracy checking.
     - Mode.DISPLAY: Displays the screenshot showing the scores and names detected.
-      ![gameboard](gameboard_example.png)
+      ![gameboard](gameboard_example2.png)
 
 
 #### Returns

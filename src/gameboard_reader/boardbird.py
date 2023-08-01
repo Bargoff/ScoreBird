@@ -74,7 +74,6 @@ def boardbird(filename, mode=Mode.NO_DISPLAY):
             print('DISPLAY success')
             cv2.imshow('img_display', boardview.img_display)
             cv2.waitKey()
-            cv2.imwrite('gameboard_example.png', boardview.img_display)
             return result_dict
 
         elif mode == Mode.DISPLAY and not boardview.gameboard_finished:

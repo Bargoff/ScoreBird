@@ -438,6 +438,26 @@ class Scoreboard:
             print('\tDid not find a match winner badge')
             return False
 
+    def findMatchWinnerByScore(self):
+        # Find the winner according to the scores (food tiebreakers determined by winner badge if it exists)
+
+        score_max = -1
+        for player in self.players_dict:
+            player_name = self.players_dict[player].player_name
+            player_final = self.players_dict[player].final_score.score
+            print('PLAYER', player, player_name)
+
+            if player_final > score_max:
+                self.winning_player_by_score.clear()
+                self.winning_player_by_score.append(player_name)
+                score_max = player_final
+            elif player_final == score_max:
+                print('TIE GAME!?!?!')
+                self.winning_player_by_score.append(player_name)
+
+        self.winner = self.winning_player_by_score
+        print('* WINNER *', self.winner)
+
     def findFinalScores(self):
         # Each feather is next to a player's final score. Use that location to
         # extrapolate the final score's approximate location.

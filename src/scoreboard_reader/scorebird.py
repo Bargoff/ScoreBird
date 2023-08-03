@@ -14,13 +14,7 @@ def scorebird(filename, tournament_name=None, mentioned_players=None, mode=Mode.
     print(timestamp(), 'Starting ScoreBird')
     scoreboard = Scoreboard(tournament_name, mentioned_players)
 
-    if mode == Mode.TESTING:
-        file_num = re.findall(r'\d+', os.path.basename(filename))[0]
-    else:
-        file_num = timestamp()
-
-    all_results = []
-    player_csvs = []
+    results_dict = {}
 
     if scoreboard.readImage(filename):
         if scoreboard.findScoreboardRectangle():
@@ -42,6 +36,10 @@ def scorebird(filename, tournament_name=None, mentioned_players=None, mode=Mode.
                         with tesserocr.PyTessBaseAPI() as api:
                             scoreboard.findPlayerNames(api)
                             scoreboard.findMatchWinner(api)
+                    else:
+                        # If a tournament isn't being used to get Wingspan player names,
+                        # then use default player names and score comparison instead of using the badge.
+                        scoreboard.findMatchWinnerByScore()
 
                     scoreboard.comparePlayerScores()
                     scoreboard.drawDetailedScores(first_pass=False)  # Update colors for quick view of fixes made
@@ -49,113 +47,54 @@ def scorebird(filename, tournament_name=None, mentioned_players=None, mode=Mode.
                     end = time.time()
                     print('Total time:', end - start, 's')
 
-                    if tournament_name:
-                        all_results = getTournamentDisplay(scoreboard)
-                    else:
-                        all_results, player_csvs = getDetailedDisplay(scoreboard, file_num)
+                    results_dict = createResultsDict(scoreboard)
 
+                    if mode == Mode.TESTING:
+                        results_dict['file_num'] = re.findall(r'\d+', os.path.basename(filename))[0]
 
-        # TODO Update testing usage
-        if mode == Mode.TESTING and scoreboard.scoreboard_correct:
-            print('TESTING success')
-            return player_csvs
-        elif mode == Mode.TESTING and not scoreboard.scoreboard_correct:
-            print('TESTING failure')
-            empty_csv = [str(file_num) + ',1,,,,,,,', str(file_num + ',2,,,,,,,')]
-            return empty_csv
+        correct_result = 'success' if scoreboard.scoreboard_correct else 'failure'
+        overall_result = str(mode.name) + ' ' + correct_result
+        print(overall_result)
 
-        elif mode == Mode.NO_DISPLAY and scoreboard.scoreboard_correct:
-            print('NO_DISPLAY success')
-            return all_results
-
-        elif mode == Mode.NO_DISPLAY and not scoreboard.scoreboard_correct:
-            print('NO_DISPLAY failure')
-            return 'Did not find a valid scoreboard'
+        if mode == Mode.NO_DISPLAY and not scoreboard.scoreboard_correct:
+            print('Did not find a valid scoreboard')
+            results_dict['error'] = 'Did not find a valid scoreboard'
 
         elif mode == Mode.DISPLAY and scoreboard.scoreboard_correct:
-            print('DISPLAY success')
             cv2.imshow('img_scoreboard_bgr', scoreboard.img_scoreboard_bgr)
             cv2.waitKey()
-            return all_results
-
         elif mode == Mode.DISPLAY and not scoreboard.scoreboard_correct:
-            print('DISPLAY failure')
             cv2.imshow('img_bgr', scoreboard.img_bgr)
             cv2.waitKey()
-            return all_results
 
     else:
         print('The path or url is incorrect or the image does not exist')
-        return 'The path or url is incorrect or the image does not exist'
+        results_dict['error'] = 'The path or url is incorrect or the image does not exist'
+
+    return results_dict
 
 
-def getTournamentDisplay(scoreboard):
-    # The tournament display is what Wingbot expects ScoreBird to return
-    print('WINNER', scoreboard.winner)
+def createResultsDict(scoreboard):
+    # Create the result dictionary containing the winner, player scores, and details if applicable.
+    results_dict = {'winner': scoreboard.winner, 'players': {}}
 
-    result_dict = {'winner': scoreboard.winner,
-                   'player1': scoreboard.players_dict[0].player_name,
-                   'score1': scoreboard.players_dict[0].final_score.score,
-                   'player2': scoreboard.players_dict[1].player_name,
-                   'score2': scoreboard.players_dict[1].final_score.score
-                   }
+    for i, player in enumerate(scoreboard.players_dict):
+        player_key = 'player' + str(i+1)
+        results_dict['players'][player_key] = {}
+        results_dict['players'][player_key]['name'] = scoreboard.players_dict[player].player_name
+        results_dict['players'][player_key]['score'] = scoreboard.players_dict[player].final_score.score
 
-    print(result_dict)
-    return result_dict
+        results_dict['players'][player_key]['details'] = {}
+        details = scoreboard.players_dict[player].detailed_score.scores_str
+        if details:
+            results_dict['players'][player_key]['details']['bird_pts'] = int(details[0])
+            results_dict['players'][player_key]['details']['bonus_pts'] = int(details[1])
+            results_dict['players'][player_key]['details']['eor_pts'] = int(details[2])
+            results_dict['players'][player_key]['details']['egg_pts'] = int(details[3])
+            results_dict['players'][player_key]['details']['cache_pts'] = int(details[4])
+            results_dict['players'][player_key]['details']['tuck_pts'] = int(details[5])
 
-
-def getDetailedDisplay(scoreboard, file_num):
-    # The detailed display is how I like the details and info to print out
-    # Also needed for my test files
-
-    all_results = []
-    player_csvs = []
-
-    for player in scoreboard.players_dict:
-        player_name = scoreboard.players_dict[player].player_name
-        player_final = scoreboard.players_dict[player].final_score.score
-        player_details = ', '.join(scoreboard.players_dict[player].detailed_score.scores_str)
-
-        player_csv = str(file_num) + ',' + str(player + 1) + ','
-        if player_details:
-            player_csv += ','.join(scoreboard.players_dict[player].detailed_score.scores_str)
-        else:
-            player_csv += ',' * 5
-        player_csv += ',' + str(player_final)
-        player_csvs.append(player_csv)
-        print(player_csv)
-
-        # TODO If tournament vs not tournament, change display of Players {} and ()
-
-        if player_details:
-            # player_result = 'Player ' + str(player+1) + ' (' + player_name + ') Details: ' + player_details + ' Score: ' + str(player_final)
-            player_result = '{} (' + player_name + ') Details: ' + player_details + ' Score: ' + str(player_final)
-        else:
-            # player_result = 'Player ' + str(player+1) + ' (' + player_name + ') Score: ' + str(player_final)
-            player_result = '{} (' + player_name + ') Score: ' + str(player_final)
-
-        all_results.append(player_result)
-
-    all_results_scores = '\n'.join(all_results)  # Testing
-
-    all_results = all_results_scores
-
-    if scoreboard.winning_player_by_badge:
-        # TODO Handle multiple players
-        if len(scoreboard.winning_player_by_badge) == 1 and scoreboard.winning_player_by_badge[0] is None:
-            print('Badge detection failed, we will get em next time')
-            winner = scoreboard.winning_player_by_score
-        else:
-            # winner = ['None' if p is None else p for p in scoreboard.winning_player_by_badge]
-            winner = scoreboard.winning_player_by_badge
-    else:
-        # winner = ['None' if p is None else p for p in scoreboard.winning_player_by_score]
-        winner = scoreboard.winning_player_by_score
-
-    all_results += '\nWinner: ' + ', '.join(winner)
-
-    print(all_results)
-    return all_results, player_csvs
+    return results_dict
 
 
 if __name__ == '__main__':

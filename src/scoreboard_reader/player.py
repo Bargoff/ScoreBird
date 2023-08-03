@@ -6,7 +6,7 @@ class Player:
     def __init__(self, player_id):
         print('\tCreating player', player_id)
         self.name = str(player_id)
-        self.player_name = ''
+        self.player_name = 'player' + str(player_id)
         self.feather_point = None
 
         self.detailed_score_line_y = None

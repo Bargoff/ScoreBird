@@ -44,11 +44,23 @@ The scorebird() function can also be called by a separate codebase or tool.  The
 
 ScoreBird returns a dictionary of the winning player(s), the players' scores, and their name if possible.
 
-      {'winner': ['foxjoke', 'Groovenphone'], 
-       'player1': 'foxjoke', 
-       'score1': 93, 
-       'player2': 'Groovenphone', 
-       'score2': 93}
+    {'players': {'player1': {'details': {'bird_pts': 42,
+                                         'bonus_pts': 6,
+                                         'cache_pts': 2,
+                                         'egg_pts': 17,
+                                         'eor_pts': 18,
+                                         'tuck_pts': 8},
+                             'name': 'foxjoke',
+                             'score': 93},
+                 'player2': {'details': {'bird_pts': 32,
+                                         'bonus_pts': 8,
+                                         'cache_pts': 6,
+                                         'egg_pts': 23,
+                                         'eor_pts': 12,
+                                         'tuck_pts': 12},
+                             'name': 'Groovenphone',
+                             'score': 93}},
+     'winner': ['foxjoke', 'Groovenphone']}
 
 
 ## BoardBird

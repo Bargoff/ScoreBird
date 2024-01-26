@@ -93,3 +93,10 @@ if __name__ == '__main__':
     filename = submissions_dir + '12.png'
 
     result_dict = boardbird(filename, mode=Mode.DISPLAY)
+    bird_results = []
+    bird_results.append(', '.join(result_dict['FOREST']))
+    bird_results.append(', '.join(result_dict['GRASSLANDS']))
+    bird_results.append(', '.join(result_dict['WETLANDS']))
+    all_birds = '\n'.join(bird_results)  # Testing
+    print(all_birds)
+

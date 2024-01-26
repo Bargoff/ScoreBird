@@ -44,7 +44,7 @@ class DetailedScore:
 
             # At least one location matched the digit template
             if matching_points_dict:
-                print('\tDigit:', digit)
+                #print('\tDigit:', digit)
 
                 all_matching_points_dict.update(matching_points_dict)
 
@@ -54,7 +54,7 @@ class DetailedScore:
                 # Create the Digit
                 for point in best_digit_points:
                     value = matching_points_dict[point].value
-                    print('\t\tPoint:', point, 'Value:', value)
+                    #print('\t\tPoint:', point, 'Value:', value)
 
                     # If multiple digits are detected at the same point, remove the worse digit.
                     if point in self.best_digit_points:
@@ -96,10 +96,10 @@ class DetailedScore:
                 if previous_point is None:
                     previous_number = digit
                     detailed_scores.append(digit)
-                    print('\tDigit:', digit, 'at X:', point[0])
+                    #print('\tDigit:', digit, 'at X:', point[0])
                 else:
                     # For every subsequent digit, figure out if it has neighbors to combine with
-                    print('\tDigit:', digit, 'at X:', point[0], 'diff from previous', point[0] - previous_point[0])
+                    #print('\tDigit:', digit, 'at X:', point[0], 'diff from previous', point[0] - previous_point[0])
                     if abs(point[0] - previous_point[0]) < distance:
                         # The digit at this point and the digit at the previous point are neighbors
                         # Then append together or in a partial working list to extract super close numbers
@@ -116,13 +116,13 @@ class DetailedScore:
 
                 previous_point = point
 
-        print('\tFinal detailed_scores str:', detailed_scores)
+        #print('\tFinal detailed_scores str:', detailed_scores)
         self.scores_str = copy.deepcopy(detailed_scores)
         for ds, detailed_score in enumerate(detailed_scores):
             detailed_scores[ds] = int(detailed_score)
         detailed_scores_sum = sum(detailed_scores)
-        print('\tFinal detailed_scores:', detailed_scores)
-        print('\tFinal detailed_scores sum:', detailed_scores_sum)
+        #print('\tFinal detailed_scores:', detailed_scores)
+        #print('\tFinal detailed_scores sum:', detailed_scores_sum)
 
         self.scores = detailed_scores
 

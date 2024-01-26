@@ -74,6 +74,7 @@ def readMasterBirdDict():
         bird_name = bird_data['Common name'].upper()
         bird_dict[bird_name] = bird_data
         bird_list.append(bird_name)
+        bird_list_normal.append(bird_data['Common name'])
 
 
 def getMasterBirdDict():
@@ -83,7 +84,11 @@ def getMasterBirdDict():
 def getBirdNameList():
     return bird_list
 
+def getBirdNameListNormal():
+    return bird_list_normal
+
 
 bird_list = []
+bird_list_normal = []
 bird_dict = {}
 readMasterBirdDict()

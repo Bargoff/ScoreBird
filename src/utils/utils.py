@@ -8,6 +8,11 @@ class Mode(Enum):
     NO_DISPLAY = 1
     TESTING = 2
 
+class Version(Enum):
+    BASE_EE = 0
+    OE = 1
+    AE = 2
+
 
 def getImageSize(image_path):
     template = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)

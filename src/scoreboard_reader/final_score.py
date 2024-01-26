@@ -35,7 +35,7 @@ class FinalScore:
             w, h = getImageSize(template)
 
             # Use a lower threshold for the final score digits
-            threshold = 0.72
+            threshold = 0.725  # Was 0.72 until a '1' perfectly lined up with dashed line
 
             matching_points_dict = findTemplateMatchingPoints(self.image_bgr, template, threshold)
 

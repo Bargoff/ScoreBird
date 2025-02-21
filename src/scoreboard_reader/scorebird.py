@@ -8,7 +8,7 @@ from src.utils.utils import timestamp, Mode
 from src.scoreboard_reader.scoreboard import Scoreboard
 from src.tournaments import getDiscordUserFromWingspanName, getWingspanNameFromDiscordUser
 
-def scorebird(filename, mentioned_players=None, get_details=True, mode=Mode.NO_DISPLAY):
+def scorebird(filename, mentioned_players=None, get_details=True, automarazzi=False, mode=Mode.NO_DISPLAY):
     start = time.time()
     print(filename)
     print(timestamp(), 'Starting ScoreBird')
@@ -56,7 +56,7 @@ def scorebird(filename, mentioned_players=None, get_details=True, mode=Mode.NO_D
                     end = time.time()
                     print('Total time:', end - start, 's')
 
-                    results_dict = createResultsDict(scoreboard, get_details)
+                    results_dict = createResultsDict(scoreboard, get_details, automarazzi)
 
                     if mode == Mode.TESTING:
                         results_dict['file_num'] = re.findall(r'\d+', os.path.basename(filename))[0]
@@ -91,7 +91,7 @@ def scorebird(filename, mentioned_players=None, get_details=True, mode=Mode.NO_D
     return results_dict
 
 
-def createResultsDict(scoreboard, get_details):
+def createResultsDict(scoreboard, get_details, automarazzi):
     # Create the result dictionary containing the winner, player scores, and details if applicable.
 
     results_dict = {'players': {},
@@ -109,14 +109,29 @@ def createResultsDict(scoreboard, get_details):
         name = scoreboard.players_dict[player].player_name
         results_dict['players'][player_key] = {}
         results_dict['players'][player_key]['name'] = name
-        results_dict['players'][player_key]['score'] = scoreboard.players_dict[player].final_score.score
+
+        score = scoreboard.players_dict[player].final_score.score
+        results_dict['players'][player_key]['score'] = score
+
+        if score < 20:
+            results_dict['error'] = f'The final score ({score}) for player {name} appears to have been detected incorrectly'
 
         results_dict['players'][player_key]['details'] = {}
 
-        if not scoreboard.players_dict[player].good_mention:
-            results_dict['error'] = f'A mentioned player did not appear to be in the scoreboard players, detected: {detected_names}'
-        elif scoreboard.players_dict[player].name_empty:
-            results_dict['error'] = 'Invalid scoreboard: A Wingspan name field appears to be empty'
+        if automarazzi:
+            results_dict['automarazzi'] = True
+            # if scoreboard.players_dict[0].player_name is not None:
+            #     # Due to OCR on the RPi, sometimes the empty space can have mystery letters detected
+            #     # in one mode which overrides the correct None result.
+            #     # I am removing this error for now because the code changes to test on the RPi would be annoying.
+            #     results_dict['error'] = 'The first player does not appear to be the Automarazzi'
+
+        else:
+            results_dict['automarazzi'] = False
+            if not scoreboard.players_dict[player].good_mention:
+                results_dict['error'] = f'A mentioned player did not appear to be in the scoreboard players, detected: {detected_names}'
+            elif scoreboard.players_dict[player].name_empty:
+                results_dict['error'] = 'Invalid scoreboard: A Wingspan name field appears to be empty'
 
         if get_details:
             details = scoreboard.players_dict[player].detailed_score.scores_str
@@ -130,6 +145,8 @@ def createResultsDict(scoreboard, get_details):
 
                 if len(details) == 7:
                     results_dict['players'][player_key]['details']['nectar_pts'] = int(details[6])
+                else:
+                    results_dict['players'][player_key]['details']['nectar_pts'] = None
 
     results_dict = fixMultipleWingspanNames(results_dict)
 

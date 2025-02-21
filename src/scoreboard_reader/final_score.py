@@ -35,7 +35,7 @@ class FinalScore:
             w, h = getImageSize(template)
 
             # Use a lower threshold for the final score digits
-            threshold = 0.725  # Was 0.72 until a '1' perfectly lined up with dashed line
+            threshold = 0.65  # Was 0.725 until a '6' and '9' perfectly lined up with the dashed line
 
             matching_points_dict = findTemplateMatchingPoints(self.image_bgr, template, threshold)
 
@@ -53,12 +53,14 @@ class FinalScore:
 
                     # If two points in the results are the same or extremely close together,
                     # it's likely the detection found two similarly matching digits
-                    # (most likely a '3' and a '9'), so remove the worse point and digit.
+                    # (most likely a '3' and a '9'), so remove the worst point and digit.
                     use_new_point = True
                     best_digit_points_copy = copy.deepcopy(self.best_digit_points)
                     for existing_point in best_digit_points_copy:
                         distance = math.dist(point, existing_point)
-                        if distance < 10:
+                        horizontal_distance = abs(point[0] - existing_point[0])
+
+                        if distance < 10 or horizontal_distance < 2:
                             existing_value = self.best_digit_points[existing_point].value
                             existing_digit = self.best_digit_points[existing_point].digit
 

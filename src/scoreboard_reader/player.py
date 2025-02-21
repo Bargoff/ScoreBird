@@ -27,6 +27,8 @@ class Player:
         self.final_score = None
         self.detailed_score = None
 
+        self.comparison_count = 0
+
     def createFinalScore(self, player_id, x, y, image):
         self.final_score = FinalScore(player_id, x, y, image)
 
@@ -62,7 +64,18 @@ class Player:
         # This also acts as a checksum between the two.
         print('Player', self.name, 'comparing final and detailed scores...')
 
+        self.comparison_count += 1
+
         if self.detailed_score:
+
+            # To prevent recursion issues where the final score is likely incorrect,
+            # stop trying to fix details to add up to a bad final score.
+            if self.comparison_count > 4:
+                print('\t---- Details appear to be broken ---- ')
+                self.detailed_score.scores = []
+                self.detailed_score.scores_str = []
+                return
+
             detailed_scores_sum = sum(self.detailed_score.scores)
             diff = abs(detailed_scores_sum - self.final_score.score)
 

@@ -11,6 +11,7 @@ from PIL import Image
 from pathlib import Path
 from urllib import request
 from typing import List, Tuple, Dict
+from http.client import IncompleteRead
 
 from src.tournaments import getWingspanPlayerList
 from src.scoreboard_reader.player import Player
@@ -43,6 +44,7 @@ class Scoreboard:
         self.player_name_w = 170
 
         self.ratio = None
+        self.img_ratio = None
 
         self.first_pass = True
         self.fixing_count = 0
@@ -63,6 +65,8 @@ class Scoreboard:
         self.winning_player_by_badge = []
         self.winning_player_by_score = []
 
+        self.automarazzi_banner_y = None
+
     def initPlayers(self, version):
         #TODO Remove this clear?
         #self.players_dict.clear()
@@ -79,34 +83,48 @@ class Scoreboard:
 
         else:
             # Otherwise try reading the image's url path if it can be read
-            try:
-                req = urllib.request.Request(filename, data=None, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    # Read the response and convert the data to a numpy array used by opencv
-                    arr = np.asarray(bytearray(response.read()), dtype=np.uint8)
-                    img = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+            for i in range(3):
+                print('Opening URL attempt', i + 1)
+                try:
+                    req = urllib.request.Request(filename, data=None, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        # Read the response and convert the data to a numpy array used by opencv
+                        arr = np.asarray(bytearray(response.read()), dtype=np.uint8)
+                        img = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
 
-                    # Some (likely mobile?) Discord upload images are higher definition, have more bits per pixel,
-                    # or have another (alpha?) channel which need to be converted to the standard format here.
-                    if np.max(img) > 255:
-                        print('Converting a 16+ bit image to 8 bits')
-                        img = (img / 256).astype('uint8')
+                        # Some (likely mobile?) Discord upload images are higher definition, have more bits per pixel,
+                        # or have another (alpha?) channel which need to be converted to the standard format here.
+                        if np.max(img) > 255:
+                            print('Converting a 16+ bit image to 8 bits')
+                            img = (img / 256).astype('uint8')
 
-                    # Store the image data
-                    self.img_bgr = img
+                        # Store the image data
+                        self.img_bgr = img
+                        break
 
-            except Exception as e:
-                print(e)
-                return False
+                except IncompleteRead as e:
+                    print('urllib Exception:', e)
+                    time.sleep(5)
+                    print('Retrying...')
+                    continue
 
-        # Convert potential 4 BGRA channel images down to the 'standard' 3 BGR channels
-        self.img_bgr = cv2.cvtColor(self.img_bgr, cv2.COLOR_BGRA2BGR)
+                except Exception as e:
+                    print('urllib Exception:', e)
+                    return False
 
-        # This black and white mask should make the beige colored scoreboard
-        # stand out making it easier to recognize the scoreboard rectangle.
-        self.img_hsv = cv2.cvtColor(self.img_bgr, cv2.COLOR_BGR2HSV)
-        self.img_mask = cv2.inRange(self.img_hsv, (0, 0, 208), (53, 29, 255))
-        return True
+        try:
+            # Convert potential 4 BGRA channel images down to the 'standard' 3 BGR channels
+            self.img_bgr = cv2.cvtColor(self.img_bgr, cv2.COLOR_BGRA2BGR)
+
+            # This black and white mask should make the beige colored scoreboard
+            # stand out making it easier to recognize the scoreboard rectangle.
+            self.img_hsv = cv2.cvtColor(self.img_bgr, cv2.COLOR_BGR2HSV)
+            self.img_mask = cv2.inRange(self.img_hsv, (0, 0, 208), (53, 29, 254))  # Was 255 until white bars at edge of image caused problems
+            return True
+
+        except Exception as e:
+            print('Exception with cv2 conversions:', e)
+            return False
 
     def findScoreboardRectangle(self, remove_border=False):
         # Scans a black and white masked image of the scoreboard for white pixel rows
@@ -116,12 +134,16 @@ class Scoreboard:
         buffer_horizontal = 45  # Pixels
 
         img_h, img_w, c = self.img_bgr.shape
+        self.img_ratio = img_w/img_h
         print('\tImage size W, H:', img_w, img_h)
+        print('\tImage ratio:', self.img_ratio)
+        if self.img_ratio > 2.4:
+            print('\t\tWider image than normal!')
 
         # Create the required number of white or '1' valued pixels which
         # signify the start of a white backed rectangle (the scoreboard).
-        threshold_percent_w = 0.55
-        threshold_percent_h = 0.42  # Was 0.40 until IV1738's boards with large white boxes
+        threshold_percent_w = 0.53 # Was 0.55 until a wide 2640x1080 image messed up the rectangle a bit.
+        threshold_percent_h = 0.40  # Was 0.40 until IV1738's boards with large white boxes.  Was 0.42 until Cricket22's tall screenshots.
         required_pixels_w = int(threshold_percent_w * img_w)
         required_pixels_h = int(threshold_percent_h * img_h)
 
@@ -192,8 +214,6 @@ class Scoreboard:
                         max_x = i
         print('\tRectangle edge X values:', min_x, max_x)
 
-
-
         if None in [min_x, min_y, max_x, max_y]:
             print('\nCould not find a scoreboard rectangle')
             return False
@@ -221,11 +241,11 @@ class Scoreboard:
 
         # Pink mask to find Nectar for OE
         lower_hsv, upper_hsv = (160, 48, 180), (176, 150, 255)  # Lower was (160, 55, 180) until some 24 bit images broke nectar
-        nectar_pixels = self.findDetailedScorePixelCount(self.img_scoreboard_bgr, lower_hsv, upper_hsv)
+        nectar_pixels = self.findNectarPixelCount(self.img_scoreboard_bgr, lower_hsv, upper_hsv)
         print('Nectar pixels total:', nectar_pixels)
 
         # An OE submission should have well over 4000 pink nectar colored pixels
-        if nectar_pixels > 500:
+        if nectar_pixels > 1000:
             self.version = Version.OE
 
         # Some people crop the scoreboard with the background art fully removed while others partially zoom
@@ -270,10 +290,14 @@ class Scoreboard:
             print('\tHeavily cropped image... scaling resizing by 90%')
             width = int(self.base_w * 0.90)
             new_height = int(new_height * 0.90)
-        elif 3.5 > self.ratio >= 2.15:
+        elif 3.5 > self.ratio >= 2.15 and self.img_ratio < 2.4:
             print('\tModerately cropped image... scaling resizing by 95%')
             # If the cropping of the image removes most of the board but keeps
             # the winner name visible, rescale less than an extreme crop.
+            # If the original image's ratio was over 2.4, then it's likely the screen
+            # was a wider screen and for some reason added some additional pixels
+            # width-wise to the scoreboard, increasing the scoreboard ratio to ~2.3.
+            # Don't resize in this case and see how it performs.
             width = int(self.base_w * 0.95)
             new_height = int(new_height * 0.95)
         elif self.likely_zoomed:
@@ -308,13 +332,34 @@ class Scoreboard:
         src_dir = os.path.dirname(reader_dir)
         scorebird_dir = os.path.dirname(src_dir)
 
+        # Use a moderate threshold
+        threshold = 0.73
+
+        ### Automarazzi ###
+        # Automarazzi games have a red VS graphic in the scoreboard.
+        template_vs = Path(os.path.join(scorebird_dir, 'templates/scoreboard/automarazzi_vs.png'))
+        matching_points_dict_vs = findTemplateMatchingPoints(self.img_scoreboard_bgr, template_vs, threshold)
+
+        if matching_points_dict_vs:
+            vs_point = findBestMatchingPoints(matching_points_dict_vs)[0]  # There can be only one
+            vs_value = matching_points_dict_vs[vs_point].value
+            w, h = getImageSize(template_vs)
+
+            print('\tAutomarazzi VS Point:', vs_point, 'Value:', vs_value)
+            self.automarazzi_banner_y = vs_point[1] + h + 20  # Some buffer
+
+            # Draw a rectangle around 'VS'
+            color = (0, 0, 255)  # Red
+            cv2.rectangle(self.img_scoreboard_bgr,
+                          pt1=vs_point,
+                          pt2=(vs_point[0] + w, vs_point[1] + h),
+                          color=color, thickness=2)
+
+
         # For whatever reason, Monster Couch made the OE scoreboard feather about 10 pixels shorter.
         # In case the normal feather cannot be found, try the OE feather instead.
         # template_ee = Path(os.path.join(scorebird_dir, 'templates/scoreboard/scoreboard_feather.png'))
         template_oe = Path(os.path.join(scorebird_dir, 'templates/scoreboard/scoreboard_feather_oe.png'))
-
-        # Use a moderate threshold
-        threshold = 0.75
 
         # Try to find both types of scoreboard feathers but use the first version with matching points.
         # matching_points_dict_ee = findTemplateMatchingPoints(self.img_scoreboard_bgr, template_ee, threshold)
@@ -334,7 +379,13 @@ class Scoreboard:
         # At least one location matched the feather template
         if matching_points_dict:
             # Get the highest matching value feather points
-            self.best_feather_points = findBestMatchingPoints(matching_points_dict)
+            best_feather_points = findBestMatchingPoints(matching_points_dict)
+
+            # Remove detected feathers if they are above the Automarazzi banner
+            if self.automarazzi_banner_y:
+                best_feather_points = [point for point in best_feather_points if point[1] > self.automarazzi_banner_y]
+
+            self.best_feather_points = best_feather_points
 
             if len(self.best_feather_points) < 2:
                 print('\nFewer than 2 feathers detected, performing second pass')
@@ -359,12 +410,17 @@ class Scoreboard:
                     print('\tPlayer', self.players_dict[i].name, 'Feather Point:', point, 'Value:', value)
                     self.players_dict[i].feather_point = point
                     color = (0, 0, 255)  # Red
-                    cv2.rectangle(self.img_scoreboard_bgr, point, (point[0] + w, point[1] + h), color, thickness=2)
+                    cv2.rectangle(self.img_scoreboard_bgr,
+                                  pt1=point,
+                                  pt2=(point[0] + w, point[1] + h),
+                                  color=color, thickness=2)
 
                     # Add the height of the feather template to the top left point of the
                     # feather to get the bottom of the feather (y values ascend top to bottom)
                     # which just about lines up with the middle of the detailed scores.
-                    self.players_dict[i].detailed_score_line_y = point[1] + h
+                    # Add a buffer of 4 to move the detailed score line down a little because
+                    # OE feathers are smaller which actually moved the line upwards just a little bit.
+                    self.players_dict[i].detailed_score_line_y = point[1] + h + 4
                 else:
                     return False
 
@@ -402,9 +458,15 @@ class Scoreboard:
         # Find the winner according to the scores (food tiebreakers determined by winner badge if it exists)
 
         score_max = -1
+        # Create a new valid players list from the detected players for correctly detecting
+        # players with tied scores.  Because the length of the match winner's name isn't known,
+        # this could previously lead to some incorrect names.
+        new_valid_players = []
         for player in self.players_dict:
             player_name = self.players_dict[player].player_name
             player_final = self.players_dict[player].final_score.score
+            if player_name is not None:
+                new_valid_players.append(player_name)
 
             # If the player's wingspan name could not be detected (too long, low res, etc)
             # Have a temp name for them other than None
@@ -421,6 +483,8 @@ class Scoreboard:
                 print('TIE GAME!?!?!')
                 self.winning_player_by_score.append(player_name)
 
+        self.valid_players = new_valid_players
+
         reader_dir = os.path.dirname(os.path.abspath(__file__))
         src_dir = os.path.dirname(reader_dir)
         scorebird_dir = os.path.dirname(src_dir)
@@ -433,9 +497,11 @@ class Scoreboard:
 
         matching_points_dict = findTemplateMatchingPoints(self.img_scoreboard_bgr, template, threshold)
 
-        # At least one location matched the feather template
+        badge_h = 32
+
+        # At least one location matched the badge template
         if matching_points_dict:
-            # Get the highest matching value feather points
+            # Get the highest matching value badge points
             self.best_winner_points = findBestMatchingPoints(matching_points_dict)
 
             #TODO Handle multiplayer games and ties use image .....
@@ -443,7 +509,7 @@ class Scoreboard:
 
             print('\tMax player name length', max_player_length)
             cw = 10  # Character width (approx)
-            needed_buffer = int((max_player_length * cw) / 2)
+            badge_buffer_w = int((max_player_length * cw) / 2)  # This buffer is to either side of the template
 
             winning_player = []
             for i, point in enumerate(self.best_winner_points):
@@ -451,23 +517,35 @@ class Scoreboard:
                 print('\tPlayer', self.players_dict[i].name, 'Winner Badge Point:', point, 'Value:', value)
                 self.players_dict[i].winner_badge_point = point
 
-                badge_buffer_w = needed_buffer  # This buffer is to either side of the template
-                badge_h = 32
+                # Minus 2 is to move above the template rectangle and reduce OCR issues
+                point_y = point[1] - 2
+
+                name_start_x = point[0] - badge_buffer_w
+                name_start_y = point_y - badge_h
+                if name_start_y < 0:
+                    name_start_y = 0
 
                 # Get the winners
-                # Minus 2 is to move above the template rectangle and reduce OCR issues
-                player_name, _, _, _ = self.getPlayerName(self.img_scoreboard_bgr, point[0] - badge_buffer_w, point[1] - 2 - badge_h,
-                                                 w + 2 * badge_buffer_w, badge_h, api, expand=False, showImage=False)
+                player_name, _, _, _ = self.getPlayerName(self.img_scoreboard_bgr,
+                                                          x=name_start_x, y=name_start_y,
+                                                          w=w + 2 * badge_buffer_w, h=badge_h,
+                                                          api=api, matchWinner=True,
+                                                          expand=False, showImage=False)
                 winning_player.append(player_name)
 
                 # Template
-                color = (150, 150, 150)  # Red
-                cv2.rectangle(self.img_scoreboard_bgr, point, (point[0] + w, point[1] + h), color, thickness=2)
+                color = (150, 150, 150)  # Gray
+                cv2.rectangle(self.img_scoreboard_bgr,
+                              pt1=point,
+                              pt2=(point[0] + w, point[1] + h),
+                              color=color, thickness=2)
 
                 # Winner badge player name
                 color = (50, 100, 255)  # Orange
-                cv2.rectangle(self.img_scoreboard_bgr, (point[0] - badge_buffer_w, point[1] - 2 - badge_h),
-                              (point[0] + w + badge_buffer_w, point[1] - 2), color, thickness=2)
+                cv2.rectangle(self.img_scoreboard_bgr,
+                              pt1=(name_start_x, name_start_y),
+                              pt2=(point[0] + w + badge_buffer_w, point_y),
+                              color=color, thickness=2)
                 print()
 
             self.winning_player_by_badge = winning_player
@@ -570,7 +648,10 @@ class Scoreboard:
                 new_y = score_y + digit_y
 
                 color = (0, 255, 0)  # Green
-                cv2.rectangle(self.img_scoreboard_bgr, (new_x, new_y), (new_x + digit_w, new_y + digit_h), color, thickness=2)
+                cv2.rectangle(self.img_scoreboard_bgr,
+                              pt1=(new_x, new_y),
+                              pt2=(new_x + digit_w, new_y + digit_h),
+                              color=color, thickness=2)
 
     def findDetailedScores(self):
         # Using the y location of the detailed score line, get a cropped detailed score image.
@@ -597,6 +678,9 @@ class Scoreboard:
             img_detailed_score = self.img_scoreboard_bgr_clean[(y - line_buffer):(y + line_buffer),
                                  self.player_name_w:detailed_scores_end_x]
 
+            # cv2.imshow('img_detailed_score', img_detailed_score)
+            # cv2.waitKey()
+
             # Gray mask to find Bird Points
             lower_hsv, upper_hsv = (47, 4, 0), (100, 70, 225)
 
@@ -607,6 +691,9 @@ class Scoreboard:
             img_mask = cv2.inRange(img_hsv, lower_hsv, upper_hsv)
             img_h, img_w = img_mask.shape
             print('\tDetails image size W, H:', img_w, img_h)
+
+            # cv2.imshow('img_mask', img_mask)
+            # cv2.waitKey()
 
             # Create the required number of white or '1' valued pixels which signify the location of bird_pts.
             threshold_percent_h = 0.40
@@ -632,14 +719,19 @@ class Scoreboard:
             # Create the updated details starting x which essentially replaces the player name width so
             # more of the name area is viewed.  This may run into OCR problems where there is a white bar
             # in the resized scoreboard, but now the player name width will be adjusted for those cases.
-            start_x = self.player_name_w + min_x
+            if min_x:
+                start_x = self.player_name_w + min_x
+            else:
+                start_x = self.player_name_w
             self.details_start_x = start_x
             print('\tDetails start x:', start_x)
 
             # Draw a rectangle around the zone where detailed scores are being looked at
             color = (255, 0, 0)  # Blue
-            cv2.rectangle(self.img_scoreboard_bgr, (start_x, y - line_buffer),
-                          (detailed_scores_end_x, y + line_buffer), color, thickness=2)
+            cv2.rectangle(self.img_scoreboard_bgr,
+                          pt1=(start_x, y - line_buffer),
+                          pt2=(detailed_scores_end_x, y + line_buffer),
+                          color=color, thickness=2)
 
             # Create the img where detailed scores are being looked at
             img_detailed_score = self.img_scoreboard_bgr_clean[(y - line_buffer):(y + line_buffer),
@@ -656,17 +748,24 @@ class Scoreboard:
             # Given the score line, go up some and down some for the rectangle of interest
             y = self.players_dict[player].detailed_score_line_y
 
-            # Minus 2 for the detailed rectangle line
-            player_name, tried_detection, good_mention, new_x = self.getPlayerName(self.img_scoreboard_bgr, 0, y - 50,
-                                                                                   self.details_start_x-2, 50,
-                                                                                   api, expand=True, showImage=False)
-
-            color = (200, 0, 150)  # Purple
-            cv2.rectangle(self.img_scoreboard_bgr, (new_x, y - 50),
-                          (self.details_start_x-2, y), color, thickness=2)
-
             # cv2.imshow('self.img_scoreboard_bgr', self.img_scoreboard_bgr)
             # cv2.waitKey()
+
+            h = 55
+            name_start_y = y - h
+            name_width = self.details_start_x - 2  # Minus 2 for moving past the detailed rectangle line
+
+            player_name, tried_detection, good_mention, new_x = self.getPlayerName(self.img_scoreboard_bgr,
+                                                                                   x=0, y=name_start_y,
+                                                                                   w=name_width, h=h,
+                                                                                   api=api, matchWinner=False,
+                                                                                   expand=True, showImage=False)
+
+            color = (200, 0, 150)  # Purple
+            cv2.rectangle(self.img_scoreboard_bgr,
+                          pt1=(new_x, name_start_y),
+                          pt2=(name_width, y),
+                          color=color, thickness=2)
 
             # If the player appears to have been mentioned incorrectly (meaning their name was found in
             # the master player list but not the mentioned player list), set a flag.
@@ -682,7 +781,7 @@ class Scoreboard:
             if player_name:
                 self.players_dict[player].player_name = player_name
 
-    def getPlayerName(self, image, x, y, w, h, api: tesserocr.PyTessBaseAPI, expand=False, showImage=False):
+    def getPlayerName(self, image, x, y, w, h, api: tesserocr.PyTessBaseAPI, matchWinner=False, expand=False, showImage=False):
         # Read the player name within a zoomed in region of the image using OCR.
 
         # Returns: player_name, tried_detection, good_mention, new_x
@@ -694,55 +793,141 @@ class Scoreboard:
         while not corrected_player_name:
             # Convert the image and crop it to the name's region.
             image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            #ret, image_thresh = cv2.threshold(image_gray, 200, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            # + cv2.THRESH_OTSU
+            ret, image_thresh_otsu = cv2.threshold(image_gray, 200, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            name_image_otsu = image_thresh_otsu[y: y + h, x: x + w]
 
+            # pil_image = Image.fromarray(name_image_otsu)
+            # # Perform OCR on the cropped name image.
+            # # Get the image to string text representation
+            # api.SetImage(pil_image)
+            # player_name = api.GetUTF8Text()
 
             # OTSU being weird solution?
             # https://docs.opencv.org/4.x/d7/d4d/tutorial_py_thresholding.html
 
 
             # Alternate method to try getting lower quality image names
-            image_thresh = cv2.adaptiveThreshold(image_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 7)
-            name_image = image_thresh[y: y + h, x: x + w]
+            image_thresh_adaptive = cv2.adaptiveThreshold(image_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 7)
+            name_image_adaptive = image_thresh_adaptive[y: y + h, x: x + w]
+
+            # pil_image = Image.fromarray(name_image_adaptive)
+            # # Perform OCR on the cropped name image.
+            # # Get the image to string text representation
+            # api.SetImage(pil_image)
+            # player_name = api.GetUTF8Text()
 
             # Attempt to crop the name_image to remove any black bars on the left side of the name box.
-            img_h, img_w = name_image.shape
+            img_h, img_w = name_image_adaptive.shape
             print('\tName image size W, H:', img_w, img_h)
 
-            # Create the required number of black or '0' valued pixels which
-            # signify the black bars in potential name images on the edge of a scoreboard.
-            threshold_percent_h = 0.30
-            required_pixels_h = int(threshold_percent_h * img_h)
+            #cv2.imshow('name_image', name_image)
+            #cv2.waitKey()
 
-            # The origin point (0,0) of a cv2 image is the top-left corner, hence the top of the image
-            # has smaller x values than the bottom and the left-hand side has smaller y values than the right.
-            print('\tScoreboard cols limit:', required_pixels_h)
-            min_x = None
-            max_x = None
-            # Transpose the numpy array to get the columns
-            for i, col in enumerate(name_image.T):
-                #print(i, np.count_nonzero(col))
-                if np.count_nonzero(col) < required_pixels_h:
-                    # The very first x value meeting the criteria is the min/leftmost x,
-                    # and the last x value meeting the criteria is the max/rightmost x.
-                    if not min_x:
-                        min_x = i
-                    else:
-                        max_x = i
-            print('\tRectangle edge X values:', min_x, max_x)
+            # Because the length of the match winner using the badge isn't known,
+            # the name image should be reduced in size to prevent incorrect name detection.
 
-            # Crop out the leftmost black bars if they exist
-            if max_x and max_x < 0.2 * img_w:
-                new_x = max_x + 2  # 2 as a buffer
-                name_image = name_image[:, new_x:]
+            # TODO Make function for duplicate?
+            if matchWinner:
+                print('Reducing size of match winner image')
+                # Create the required number of black or '0' valued pixels which
+                # signify the black bars in potential name images on the edge of a scoreboard.
+                threshold_percent_h = 0.3
+                required_pixels_h = int(threshold_percent_h * img_h)
 
-            # cv2.imshow('name_image', name_image)
-            # cv2.waitKey()
-            # filename = timestamp() + '.png'
-            # cv2.imwrite(filename, name_image)
+                # The origin point (0,0) of a cv2 image is the top-left corner, hence the top of the image
+                # has smaller x values than the bottom and the left-hand side has smaller y values than the right.
+                print('\tScoreboard cols limit:', required_pixels_h)
+                max_x = None
+                # Transpose the numpy array to get the columns
 
-            img_white_pixels = np.count_nonzero(name_image)
+                last_x = None
+                middle_x = int(img_w / 2)
+                pixel_space_count = 0
+                # Assume that adaptive works better for the match winner field vs the smaller player name on the left.
+                for i, col in enumerate(name_image_adaptive.T):
+                    # Starting from the middle of the image to get to the middle of the name,
+                    # look for majority black columns until the columns start to turn white.
+                    # This indicates the end of the name and the name width can approximately
+                    # be determined by doubling this value to reduce noisy badge pixels.
+                    if i > middle_x:
+                        white_pixels = np.count_nonzero(col)
+                        #print(i, white_pixels)
+
+                        # If the column appears to be nearly all white (with a small buffer for
+                        # random pixels but enough for capital L's not to trigger it), start
+                        # counting the spaces in a row to find where the end of the letters are.
+                        if white_pixels >= img_h - 1:
+                            # If the previous column was a space, keep an eye on tracking adjacent spaces
+                            if last_x is not None and i - last_x == 1:
+                                pixel_space_count += 1
+                                if pixel_space_count > 6:
+                                    max_x = i
+                                    break
+                            else:
+                                pixel_space_count = 0
+
+                            last_x = i
+
+                # If the end of the name image isn't 6 or so white columns, assume that
+                # the name is pretty long and the entire width should be used.
+                if max_x is None:
+                    max_x = img_w - 1
+
+                print('\tRectangle edge X values:', max_x, middle_x)
+
+                half_width = max_x - middle_x
+                name_left_x = middle_x - half_width
+                name_right_x = middle_x + half_width
+                print('\tRectangle edge X values:', name_left_x, name_right_x)
+
+                # Crop the name image to be the area where the name appears to be
+                name_image_adaptive = name_image_adaptive[:, name_left_x:name_right_x]
+                # cv2.imshow('name_image', name_image)
+                # cv2.waitKey()
+
+                # Winner badge player name
+                color = (50, 0, 255)  # Red Orange
+                cv2.rectangle(self.img_scoreboard_bgr,
+                              pt1=(x + name_left_x, y + 2),
+                              pt2=(x + name_right_x, y + h - 2),
+                              color=color, thickness=2)
+
+            else:
+                # Create the required number of black or '0' valued pixels which
+                # signify the black bars in potential name images on the edge of a scoreboard.
+                threshold_percent_h = 0.30
+                required_pixels_h = int(threshold_percent_h * img_h)
+
+                # The origin point (0,0) of a cv2 image is the top-left corner, hence the top of the image
+                # has smaller x values than the bottom and the left-hand side has smaller y values than the right.
+                print('\tScoreboard cols limit:', required_pixels_h)
+                min_x = None
+                max_x = None
+                # Transpose the numpy array to get the columns
+                for i, col in enumerate(name_image_adaptive.T):
+                    #print(i, np.count_nonzero(col))
+                    if np.count_nonzero(col) < required_pixels_h:
+                        # The very first x value meeting the criteria is the min/leftmost x,
+                        # and the last x value meeting the criteria is the max/rightmost x.
+                        if not min_x:
+                            min_x = i
+                        else:
+                            max_x = i
+                print('\tRectangle edge X values:', min_x, max_x)
+
+                # Crop out the leftmost black bars if they exist
+                if max_x and max_x < 0.2 * img_w:
+                    new_x = max_x + 2  # 2 as a buffer
+                    name_image_adaptive = name_image_adaptive[:, new_x:]
+
+                    # Assume that the size of the image is pretty similar between thresholding methods,
+                    # so the black bars if they exist will be cropped out of both images.
+                    name_image_otsu = name_image_otsu[:, new_x:]
+
+                # cv2.imshow('name_image', name_image)
+                # cv2.waitKey()
+
+            img_white_pixels = np.count_nonzero(name_image_adaptive)
             percent_white = img_white_pixels / (w * h)
             print('Player name space % white:', percent_white)
             print('Player name space w/h', w, h, 'at x/y', x, y)
@@ -761,31 +946,50 @@ class Scoreboard:
                 scale_percent = width / w
                 new_height = int(h * scale_percent)
 
-                name_image = cv2.resize(name_image, (width, new_height))
+                name_image_adaptive = cv2.resize(name_image_adaptive, (width, new_height))
 
-            pil_image = Image.fromarray(name_image)
+                name_image_otsu = cv2.resize(name_image_otsu, (width, new_height))
 
             # Perform OCR on the cropped name image.
             # Get the image to string text representation
-            api.SetImage(pil_image)
-            player_name = api.GetUTF8Text()
+            pil_image_adaptive = Image.fromarray(name_image_adaptive)
+            api.SetImage(pil_image_adaptive)
+            player_name_adaptive = api.GetUTF8Text()
+
+            pil_image_otsu = Image.fromarray(name_image_otsu)
+            api.SetImage(pil_image_otsu)
+            player_name_otsu = api.GetUTF8Text()
 
             #print('Player name approx:', player_name.strip())
 
-            player_name_clean = re.sub('[^0-9a-zA-Z]+', ' ', player_name)
-            print('\tPlayer name approx clean:', repr(player_name_clean))
+            player_name_clean_adaptive = re.sub('[^0-9a-zA-Z]+', ' ', player_name_adaptive)
+            print('\tPlayer name (adaptive) approx clean:', repr(player_name_clean_adaptive))
+
+            player_name_clean_otsu = re.sub('[^0-9a-zA-Z]+', ' ', player_name_otsu)
+            print('\tPlayer name (otsu) approx clean:', repr(player_name_clean_otsu))
 
             # If no player name was detected, assume the game is a player vs bot/ai game
             # if not player_name_clean:
             #     return None
 
-            corrected_player_name, good_mention = self.checkPlayerName(player_name_clean)
+            corrected_player_name_adaptive, good_mention_adaptive, max_val_adaptive = self.checkPlayerName(player_name_clean_adaptive)
 
-            if not good_mention:
+            corrected_player_name_otsu, good_mention_otsu, max_val_otsu = self.checkPlayerName(player_name_clean_otsu)
+
+            if max_val_adaptive > max_val_otsu:
+                print('Using corrected player name through ADAPTIVE thresholding')
+                corrected_player_name = corrected_player_name_adaptive
+            else:
+                print('Using corrected player name through OTSU thresholding')
+                corrected_player_name = corrected_player_name_otsu
+
+
+            if not good_mention_adaptive and not good_mention_otsu:
                 return None, True, False, x
 
             # Reduce the area that is being searched width-wise
-            if not corrected_player_name:
+            if (not corrected_player_name_adaptive or not corrected_player_name_adaptive in self.valid_players) \
+                    and (not corrected_player_name_otsu or not corrected_player_name_otsu in self.valid_players):
                 buff = 10
                 x += buff
                 w -= buff #* 2 # Time 2 was actually shrinking the right side too much in some cases
@@ -798,7 +1002,9 @@ class Scoreboard:
                     return None, True, None, x
 
             if showImage:
-                cv2.imshow('Detected', name_image)
+                cv2.imshow('Detected (adaptive)', name_image_adaptive)
+                cv2.waitKey()
+                cv2.imshow('Detected (otsu)', name_image_otsu)
                 cv2.waitKey()
 
         return corrected_player_name, True, True, new_x
@@ -811,7 +1017,7 @@ class Scoreboard:
         player_name_clean = player_name.strip().upper()
 
         #print('Players', self.valid_players)
-        players_upper = [p.upper() for p in self.valid_players]
+        players_upper = [p.upper() for p in self.valid_players if p is not None]
 
         # Create this list for checking against incorrectly mentioned players
         all_players = getWingspanPlayerList()
@@ -854,9 +1060,9 @@ class Scoreboard:
         # return this info.
         if max_val2 > max_val and max_val < 0.6:
             print('\t\tPlayer appears to have been mentioned incorrectly')
-            return None, False
+            return None, False, max_val
 
-        return best_player, True
+        return best_player, True, max_val
 
     def findApproximateDetailedScores(self):
         # Find the approximate detailed scores using the colored 'counting up' bar
@@ -967,6 +1173,16 @@ class Scoreboard:
         img_white_pixels = np.count_nonzero(img_mask)
         return img_white_pixels
 
+    def findNectarPixelCount(self, img_detailed_scores, lower_hsv, upper_hsv):
+        # Ignore the leftmost 10% of the image because if players use the sakura background then
+        # there is a small chance that false nectar pixels could be detected on a BASE_EE board.
+        img_h, img_w, c = img_detailed_scores.shape
+        img_detailed_scores_trim = img_detailed_scores[:, int(img_w/10):]
+
+        img_white_pixels = self.findDetailedScorePixelCount(img_detailed_scores_trim, lower_hsv, upper_hsv)
+
+        return img_white_pixels
+
     def decipherDetailedScores(self):
         # Figure out each player's detailed scores within the detailed score region.
         # Use template matching to find the individual digits in the detailed scores.
@@ -999,7 +1215,10 @@ class Scoreboard:
                 else:
                     color = (255, 0, 255)  # Magenta
 
-                cv2.rectangle(self.img_scoreboard_bgr, (new_x, new_y), (new_x + digit_w, new_y + digit_h), color, thickness=2)
+                cv2.rectangle(self.img_scoreboard_bgr,
+                              pt1=(new_x, new_y),
+                              pt2=(new_x + digit_w, new_y + digit_h),
+                              color=color, thickness=2)
 
     def comparePlayerScores(self):
         print('\n\n')

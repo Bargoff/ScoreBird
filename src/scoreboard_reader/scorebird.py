@@ -143,10 +143,15 @@ def createResultsDict(scoreboard, get_details, automarazzi):
                 results_dict['players'][player_key]['details']['cache_pts'] = int(details[4])
                 results_dict['players'][player_key]['details']['tuck_pts'] = int(details[5])
 
-                if len(details) == 7:
+                if len(details) >= 7:
                     results_dict['players'][player_key]['details']['nectar_pts'] = int(details[6])
                 else:
                     results_dict['players'][player_key]['details']['nectar_pts'] = None
+
+                if len(details) == 8:
+                    results_dict['players'][player_key]['details']['duet_pts'] = int(details[7])
+                else:
+                    results_dict['players'][player_key]['details']['duet_pts'] = None
 
     results_dict = fixMultipleWingspanNames(results_dict)
 

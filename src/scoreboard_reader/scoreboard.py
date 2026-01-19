@@ -248,6 +248,16 @@ class Scoreboard:
         if nectar_pixels > 1000:
             self.version = Version.OE
 
+        # Salmon/reddish-pink mask to find Duet Tokens for AE (Asia Expansion duet mode)
+        # Duet token color is #D9A99F which is HSV (5, 68, 217)
+        lower_hsv, upper_hsv = (0, 40, 180), (15, 100, 255)
+        duet_pixels = self.findDuetPixelCount(self.img_scoreboard_bgr, lower_hsv, upper_hsv)
+        print('Duet pixels total:', duet_pixels)
+
+        # An AE duet mode submission should have duet colored pixels
+        if duet_pixels > 1000:
+            self.version = Version.AE
+
         # Some people crop the scoreboard with the background art fully removed while others partially zoom
         # in on the scoreboard leaving just the top's winner section and some background art in the image.
         # This flag is meant to handle the latter case which some different scaling needs to be
@@ -371,6 +381,10 @@ class Scoreboard:
             matching_points_dict = matching_points_dict_oe
         elif matching_points_dict_oe and self.version == Version.OE:
             print('An OE scoreboard feather has been found')
+            w, h = getImageSize(template_oe)
+            matching_points_dict = matching_points_dict_oe
+        elif matching_points_dict_oe and self.version == Version.AE:
+            print('An AE (Asia duet mode) scoreboard feather has been found')
             w, h = getImageSize(template_oe)
             matching_points_dict = matching_points_dict_oe
         else:
@@ -1134,13 +1148,22 @@ class Scoreboard:
                 lower_hsv, upper_hsv = (160, 48, 180), (176, 150, 255)  # Lower was (160, 55, 180) until some 24 bit images broke nectar
                 detail_nectar_count = self.findDetailedScorePixelCount(img_detailed_scores, lower_hsv, upper_hsv)
 
+            # Duet token detection for AE (Asia Expansion duet mode)
+            if self.version == Version.AE:
+                # Salmon/reddish-pink mask to find Duet Tokens for AE
+                # Duet token color is #D9A99F which is HSV (5, 68, 217)
+                lower_hsv, upper_hsv = (0, 40, 180), (15, 100, 255)
+                detail_duet_count = self.findDetailedScorePixelCount(img_detailed_scores, lower_hsv, upper_hsv)
+            else:
+                detail_duet_count = 0
+
             # Using the number of nonzero pixels available in the mask, create an
             # approximate sum which is used to calculate the approximate detailed score.
             # This is then used for verifying/placement of detailed scores that may not
             # be visible in the screenshot or digits that are too close together.
             details_sum = detail_birdpts_count + detail_bonus_count + detail_eor_count \
                           + detail_eggs_count + detail_caches_count + detail_tucks_count \
-                          + detail_nectar_count
+                          + detail_nectar_count + detail_duet_count
 
             final_score = self.players_dict[player].final_score.score
 
@@ -1151,10 +1174,11 @@ class Scoreboard:
             approx_cache_pts = math.ceil(final_score * detail_caches_count / details_sum)
             approx_tuck_pts = math.ceil(final_score * detail_tucks_count / details_sum)
             approx_nectar_pts = math.ceil(final_score * detail_nectar_count / details_sum)
+            approx_duet_pts = math.ceil(final_score * detail_duet_count / details_sum) if self.version == Version.AE else None
 
             self.players_dict[player].setApproximateDetailedScores(approx_bird_pts, approx_bonus_pts, approx_eor_pts,
                                                                    approx_egg_pts, approx_cache_pts, approx_tuck_pts,
-                                                                   approx_nectar_pts)
+                                                                   approx_nectar_pts, approx_duet_pts)
 
             print('\tBird Points approx value:', approx_bird_pts)
             print('\tBonus Cards approx value:', approx_bonus_pts)
@@ -1163,6 +1187,7 @@ class Scoreboard:
             print('\tCaches approx value:', approx_cache_pts)
             print('\tTucks approx value:', approx_tuck_pts)
             print('\tNectar approx value:', approx_nectar_pts)
+            print('\tDuet approx value:', approx_duet_pts)
 
     def findDetailedScorePixelCount(self, img_detailed_scores, lower_hsv, upper_hsv):
         # Apply the mask to the detailed score image
@@ -1176,6 +1201,15 @@ class Scoreboard:
     def findNectarPixelCount(self, img_detailed_scores, lower_hsv, upper_hsv):
         # Ignore the leftmost 10% of the image because if players use the sakura background then
         # there is a small chance that false nectar pixels could be detected on a BASE_EE board.
+        img_h, img_w, c = img_detailed_scores.shape
+        img_detailed_scores_trim = img_detailed_scores[:, int(img_w/10):]
+
+        img_white_pixels = self.findDetailedScorePixelCount(img_detailed_scores_trim, lower_hsv, upper_hsv)
+
+        return img_white_pixels
+
+    def findDuetPixelCount(self, img_detailed_scores, lower_hsv, upper_hsv):
+        # Ignore the leftmost 10% of the image similar to nectar detection
         img_h, img_w, c = img_detailed_scores.shape
         img_detailed_scores_trim = img_detailed_scores[:, int(img_w/10):]
 

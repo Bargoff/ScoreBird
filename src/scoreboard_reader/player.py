@@ -22,6 +22,7 @@ class Player:
         self.approx_cache_pts = None
         self.approx_tuck_pts = None
         self.approx_nectar_pts = None
+        self.approx_duet_pts = None
         self.approx_detailed_scores = None
 
         self.final_score = None
@@ -43,9 +44,14 @@ class Player:
 
     def setVersion(self, version):
         self.version = version
-        self.num_details = 7 if version == Version.OE else 6
+        if version == Version.AE:
+            self.num_details = 8
+        elif version == Version.OE:
+            self.num_details = 7
+        else:
+            self.num_details = 6
 
-    def setApproximateDetailedScores(self, bird_pts, bonus_pts, eor_pts, egg_pts, cache_pts, tuck_pts, nectar_pts):
+    def setApproximateDetailedScores(self, bird_pts, bonus_pts, eor_pts, egg_pts, cache_pts, tuck_pts, nectar_pts, duet_pts=None):
         self.approx_bird_pts = bird_pts
         self.approx_bonus_pts = bonus_pts
         self.approx_eor_pts = eor_pts
@@ -53,9 +59,10 @@ class Player:
         self.approx_cache_pts = cache_pts
         self.approx_tuck_pts = tuck_pts
         self.approx_nectar_pts = nectar_pts
+        self.approx_duet_pts = duet_pts
         self.approx_detailed_scores = [self.approx_bird_pts, self.approx_bonus_pts, self.approx_eor_pts,
                                        self.approx_egg_pts, self.approx_cache_pts, self.approx_tuck_pts,
-                                       self.approx_nectar_pts]
+                                       self.approx_nectar_pts, self.approx_duet_pts]
 
     def compareFinalAndDetailedScores(self):
         # Recursively compare the final score vs detailed scores

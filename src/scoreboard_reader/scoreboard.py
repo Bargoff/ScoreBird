@@ -250,12 +250,15 @@ class Scoreboard:
 
         # Salmon/reddish-pink mask to find Duet Tokens for AE (Asia Expansion duet mode)
         # Duet token color is #D9A99F which is HSV (5, 68, 217)
-        lower_hsv, upper_hsv = (0, 40, 180), (15, 100, 255)
+        # Using a tight range to avoid false positives from other UI elements
+        lower_hsv, upper_hsv = (0, 55, 195), (10, 85, 240)
         duet_pixels = self.findDuetPixelCount(self.img_scoreboard_bgr, lower_hsv, upper_hsv)
         print('Duet pixels total:', duet_pixels)
 
         # An AE duet mode submission should have duet colored pixels
-        if duet_pixels > 1000:
+        # The duet bar pixels should be roughly proportional to nectar pixels (both are score categories)
+        # If duet_pixels greatly exceeds nectar_pixels, it's likely a false positive from other UI elements
+        if duet_pixels > 1000 and (nectar_pixels == 0 or duet_pixels < nectar_pixels * 3):
             self.version = Version.AE
 
         # Some people crop the scoreboard with the background art fully removed while others partially zoom
@@ -1152,7 +1155,8 @@ class Scoreboard:
             if self.version == Version.AE:
                 # Salmon/reddish-pink mask to find Duet Tokens for AE
                 # Duet token color is #D9A99F which is HSV (5, 68, 217)
-                lower_hsv, upper_hsv = (0, 40, 180), (15, 100, 255)
+                # Using a tight range to avoid false positives
+                lower_hsv, upper_hsv = (0, 55, 195), (10, 85, 240)
                 detail_duet_count = self.findDetailedScorePixelCount(img_detailed_scores, lower_hsv, upper_hsv)
             else:
                 detail_duet_count = 0

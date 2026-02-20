@@ -22,6 +22,7 @@ class Player:
         self.approx_cache_pts = None
         self.approx_tuck_pts = None
         self.approx_nectar_pts = None
+        self.approx_duet_token_pts = None
         self.approx_detailed_scores = None
 
         self.final_score = None
@@ -43,9 +44,18 @@ class Player:
 
     def setVersion(self, version):
         self.version = version
-        self.num_details = 7 if version == Version.OE else 6
 
-    def setApproximateDetailedScores(self, bird_pts, bonus_pts, eor_pts, egg_pts, cache_pts, tuck_pts, nectar_pts):
+        if version == Version.OE or version == Version.AE_DUET:
+            self.num_details = 7
+        elif version == Version.AE_DUET_OE:
+            self.num_details = 8
+        else:
+            self.num_details = 6
+        #self.num_details = 7 if version == Version.OE else 6
+        # TODO How to determine AE or OE by number of details alone???
+
+    def setApproximateDetailedScores(self, bird_pts, bonus_pts, eor_pts, egg_pts,
+                                     cache_pts, tuck_pts, nectar_pts, duet_token_pts):
         self.approx_bird_pts = bird_pts
         self.approx_bonus_pts = bonus_pts
         self.approx_eor_pts = eor_pts
@@ -53,9 +63,10 @@ class Player:
         self.approx_cache_pts = cache_pts
         self.approx_tuck_pts = tuck_pts
         self.approx_nectar_pts = nectar_pts
+        self.approx_duet_token_pts = duet_token_pts
         self.approx_detailed_scores = [self.approx_bird_pts, self.approx_bonus_pts, self.approx_eor_pts,
                                        self.approx_egg_pts, self.approx_cache_pts, self.approx_tuck_pts,
-                                       self.approx_nectar_pts]
+                                       self.approx_nectar_pts, self.approx_duet_token_pts]
 
     def compareFinalAndDetailedScores(self):
         # Recursively compare the final score vs detailed scores

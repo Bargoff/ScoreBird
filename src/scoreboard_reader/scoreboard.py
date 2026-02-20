@@ -3,6 +3,7 @@ import os
 import re
 import copy
 import math
+import time
 import urllib
 import difflib
 import tesserocr
@@ -65,6 +66,7 @@ class Scoreboard:
         self.winning_player_by_badge = []
         self.winning_player_by_score = []
 
+        self.automarazzi = False
         self.automarazzi_banner_y = None
 
     def initPlayers(self, version):
@@ -244,17 +246,35 @@ class Scoreboard:
         nectar_pixels = self.findNectarPixelCount(self.img_scoreboard_bgr, lower_hsv, upper_hsv)
         print('Nectar pixels total:', nectar_pixels)
 
+        # Reddish mask to find Duet Tokens for AE
+        lower_hsv, upper_hsv = (5, 62, 210), (10, 90, 255)  # (5, 70, 212), (10, 90, 255)
+        duet_token_pixels = self.findDetailedScorePixelCount(self.img_scoreboard_bgr, lower_hsv, upper_hsv)
+        print('Duet Tokens pixels total:', duet_token_pixels)
+
+        version_list = []
         # An OE submission should have well over 4000 pink nectar colored pixels
         if nectar_pixels > 1000:
+            version_list.append(Version.OE)
+            #self.version = Version.OE
+
+        # An AE submission using Duet mode should have well over 4000 reddish Duet Token colored pixels
+        if duet_token_pixels > 1000:
+            version_list.append(Version.AE_DUET)
+
+        if Version.OE in version_list and Version.AE_DUET in version_list:
+            self.version = Version.AE_DUET_OE
+        elif Version.OE in version_list:
             self.version = Version.OE
+        elif Version.AE_DUET in version_list:
+            self.version = Version.AE_DUET
+        print('Game version:', self.version)
 
         # Some people crop the scoreboard with the background art fully removed while others partially zoom
         # in on the scoreboard leaving just the top's winner section and some background art in the image.
         # This flag is meant to handle the latter case which some different scaling needs to be
         # applied with resizing the image since the scoreboard ratio in these cases is generally 'normal'.
         zoom_buffer = 8  # Pixels
-        if min_x < zoom_buffer and max_x > img_w - zoom_buffer\
-                and max_y > img_h - zoom_buffer:
+        if min_x < zoom_buffer and max_x > img_w - zoom_buffer and max_y > img_h - zoom_buffer:
             print('\tScreenshot is likely zoomed in')
             self.likely_zoomed = True
 
@@ -300,7 +320,7 @@ class Scoreboard:
             # Don't resize in this case and see how it performs.
             width = int(self.base_w * 0.95)
             new_height = int(new_height * 0.95)
-        elif self.likely_zoomed:
+        elif self.likely_zoomed and not (2.12 > self.ratio > 2.05):
             # If the scoreboard has a normal ratio, but it is likely zoomed in, reduce the
             # scale of the image a little since the far left and right whitespace may be removed
             # which would appear to zoom in the scoreboard when resizing using a normal full rectangle.
@@ -337,24 +357,25 @@ class Scoreboard:
 
         ### Automarazzi ###
         # Automarazzi games have a red VS graphic in the scoreboard.
-        template_vs = Path(os.path.join(scorebird_dir, 'templates/scoreboard/automarazzi_vs.png'))
-        matching_points_dict_vs = findTemplateMatchingPoints(self.img_scoreboard_bgr, template_vs, threshold)
+        # But we are using the avatar picture for the automarazzi just in case players crop the image.
+        template_avatar = Path(os.path.join(scorebird_dir, 'templates/scoreboard/automarazzi_avatar.png'))
+        matching_points_dict_avatar = findTemplateMatchingPoints(self.img_scoreboard_bgr, template_avatar, threshold)
 
-        if matching_points_dict_vs:
-            vs_point = findBestMatchingPoints(matching_points_dict_vs)[0]  # There can be only one
-            vs_value = matching_points_dict_vs[vs_point].value
-            w, h = getImageSize(template_vs)
+        if matching_points_dict_avatar:
+            self.automarazzi = True
+            avatar_point = findBestMatchingPoints(matching_points_dict_avatar)[0]  # There can be only one
+            avatar_value = matching_points_dict_avatar[avatar_point].value
+            w, h = getImageSize(template_avatar)
 
-            print('\tAutomarazzi VS Point:', vs_point, 'Value:', vs_value)
-            self.automarazzi_banner_y = vs_point[1] + h + 20  # Some buffer
+            print('\tAutomarazzi VS Point:', avatar_point, 'Value:', avatar_value)
+            self.automarazzi_banner_y = avatar_point[1] + h + 20  # Some buffer
 
-            # Draw a rectangle around 'VS'
+            # Draw a rectangle around the Automarazzi picture
             color = (0, 0, 255)  # Red
             cv2.rectangle(self.img_scoreboard_bgr,
-                          pt1=vs_point,
-                          pt2=(vs_point[0] + w, vs_point[1] + h),
+                          pt1=avatar_point,
+                          pt2=(avatar_point[0] + w, avatar_point[1] + h),
                           color=color, thickness=2)
-
 
         # For whatever reason, Monster Couch made the OE scoreboard feather about 10 pixels shorter.
         # In case the normal feather cannot be found, try the OE feather instead.
@@ -366,11 +387,11 @@ class Scoreboard:
         matching_points_dict_oe = findTemplateMatchingPoints(self.img_scoreboard_bgr, template_oe, threshold)
 
         if matching_points_dict_oe and self.version == Version.BASE_EE:
-            print('A base game or EE scoreboard feather has been found')
+            print('A base game or EE era scoreboard feather has been found')
             w, h = getImageSize(template_oe)
             matching_points_dict = matching_points_dict_oe
-        elif matching_points_dict_oe and self.version == Version.OE:
-            print('An OE scoreboard feather has been found')
+        elif matching_points_dict_oe and self.version != Version.BASE_EE:
+            print('An OE era scoreboard feather has been found')
             w, h = getImageSize(template_oe)
             matching_points_dict = matching_points_dict_oe
         else:
@@ -493,7 +514,7 @@ class Scoreboard:
         w, h = getImageSize(template)
 
         # Use a moderate threshold
-        threshold = 0.8
+        threshold = 0.75
 
         matching_points_dict = findTemplateMatchingPoints(self.img_scoreboard_bgr, template, threshold)
 
@@ -1114,9 +1135,10 @@ class Scoreboard:
                 detail_tucks_count = self.findDetailedScorePixelCount(img_detailed_scores, lower_hsv, upper_hsv)
 
                 detail_nectar_count = 0
+                detail_duet_token_count = 0
 
             else:
-                # OE colorations are slightly different, plus nectar is added
+                # OE era colorations are slightly different, plus nectar is added
 
                 # Tan mask to find Eggs for OE
                 lower_hsv, upper_hsv = (16, 50, 175), (22, 80, 255)
@@ -1134,13 +1156,17 @@ class Scoreboard:
                 lower_hsv, upper_hsv = (160, 48, 180), (176, 150, 255)  # Lower was (160, 55, 180) until some 24 bit images broke nectar
                 detail_nectar_count = self.findDetailedScorePixelCount(img_detailed_scores, lower_hsv, upper_hsv)
 
+                # Reddish mask to find Duet Tokens for AE
+                lower_hsv, upper_hsv = (5, 62, 210), (10, 90, 255) #(5, 70, 212), (10, 90, 255)
+                detail_duet_token_count = self.findDetailedScorePixelCount(img_detailed_scores, lower_hsv, upper_hsv)
+
             # Using the number of nonzero pixels available in the mask, create an
             # approximate sum which is used to calculate the approximate detailed score.
             # This is then used for verifying/placement of detailed scores that may not
             # be visible in the screenshot or digits that are too close together.
             details_sum = detail_birdpts_count + detail_bonus_count + detail_eor_count \
                           + detail_eggs_count + detail_caches_count + detail_tucks_count \
-                          + detail_nectar_count
+                          + detail_nectar_count + detail_duet_token_count
 
             final_score = self.players_dict[player].final_score.score
 
@@ -1151,10 +1177,11 @@ class Scoreboard:
             approx_cache_pts = math.ceil(final_score * detail_caches_count / details_sum)
             approx_tuck_pts = math.ceil(final_score * detail_tucks_count / details_sum)
             approx_nectar_pts = math.ceil(final_score * detail_nectar_count / details_sum)
+            approx_duet_token_pts = math.ceil(final_score * detail_duet_token_count / details_sum)
 
             self.players_dict[player].setApproximateDetailedScores(approx_bird_pts, approx_bonus_pts, approx_eor_pts,
                                                                    approx_egg_pts, approx_cache_pts, approx_tuck_pts,
-                                                                   approx_nectar_pts)
+                                                                   approx_nectar_pts, approx_duet_token_pts)
 
             print('\tBird Points approx value:', approx_bird_pts)
             print('\tBonus Cards approx value:', approx_bonus_pts)
@@ -1163,6 +1190,7 @@ class Scoreboard:
             print('\tCaches approx value:', approx_cache_pts)
             print('\tTucks approx value:', approx_tuck_pts)
             print('\tNectar approx value:', approx_nectar_pts)
+            print('\tDuet Token approx value:', approx_duet_token_pts)
 
     def findDetailedScorePixelCount(self, img_detailed_scores, lower_hsv, upper_hsv):
         # Apply the mask to the detailed score image

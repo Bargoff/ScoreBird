@@ -11,7 +11,8 @@ class Mode(Enum):
 class Version(Enum):
     BASE_EE = 0
     OE = 1
-    AE = 2
+    AE_DUET = 2
+    AE_DUET_OE = 3
 
 
 def getImageSize(image_path):

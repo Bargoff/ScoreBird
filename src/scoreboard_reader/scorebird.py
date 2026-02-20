@@ -4,11 +4,11 @@ import cv2
 import time
 import tesserocr
 
-from src.utils.utils import timestamp, Mode
+from src.utils.utils import timestamp, Mode, Version
 from src.scoreboard_reader.scoreboard import Scoreboard
 from src.tournaments import getDiscordUserFromWingspanName, getWingspanNameFromDiscordUser
 
-def scorebird(filename, mentioned_players=None, get_details=True, automarazzi=False, mode=Mode.NO_DISPLAY):
+def scorebird(filename, mentioned_players=None, get_details=True, mode=Mode.NO_DISPLAY):
     start = time.time()
     print(filename)
     print(timestamp(), 'Starting ScoreBird')
@@ -56,7 +56,7 @@ def scorebird(filename, mentioned_players=None, get_details=True, automarazzi=Fa
                     end = time.time()
                     print('Total time:', end - start, 's')
 
-                    results_dict = createResultsDict(scoreboard, get_details, automarazzi)
+                    results_dict = createResultsDict(scoreboard, get_details)
 
                     if mode == Mode.TESTING:
                         results_dict['file_num'] = re.findall(r'\d+', os.path.basename(filename))[0]
@@ -91,12 +91,13 @@ def scorebird(filename, mentioned_players=None, get_details=True, automarazzi=Fa
     return results_dict
 
 
-def createResultsDict(scoreboard, get_details, automarazzi):
+def createResultsDict(scoreboard, get_details):
     # Create the result dictionary containing the winner, player scores, and details if applicable.
 
     results_dict = {'players': {},
                     'winner': scoreboard.winner,
-                    'version': scoreboard.version}
+                    'version': scoreboard.version,
+                    'automarazzi': scoreboard.automarazzi}
 
     name_list = []
     for i, player in enumerate(scoreboard.players_dict):
@@ -118,16 +119,7 @@ def createResultsDict(scoreboard, get_details, automarazzi):
 
         results_dict['players'][player_key]['details'] = {}
 
-        if automarazzi:
-            results_dict['automarazzi'] = True
-            # if scoreboard.players_dict[0].player_name is not None:
-            #     # Due to OCR on the RPi, sometimes the empty space can have mystery letters detected
-            #     # in one mode which overrides the correct None result.
-            #     # I am removing this error for now because the code changes to test on the RPi would be annoying.
-            #     results_dict['error'] = 'The first player does not appear to be the Automarazzi'
-
-        else:
-            results_dict['automarazzi'] = False
+        if not scoreboard.automarazzi:
             if not scoreboard.players_dict[player].good_mention:
                 results_dict['error'] = f'A mentioned player did not appear to be in the scoreboard players, detected: {detected_names}'
             elif scoreboard.players_dict[player].name_empty:
@@ -143,10 +135,27 @@ def createResultsDict(scoreboard, get_details, automarazzi):
                 results_dict['players'][player_key]['details']['cache_pts'] = int(details[4])
                 results_dict['players'][player_key]['details']['tuck_pts'] = int(details[5])
 
-                if len(details) == 7:
-                    results_dict['players'][player_key]['details']['nectar_pts'] = int(details[6])
-                else:
-                    results_dict['players'][player_key]['details']['nectar_pts'] = None
+                if scoreboard.version == Version.OE:
+                    if len(details) == 7:
+                        results_dict['players'][player_key]['details']['nectar_pts'] = int(details[6])
+                        results_dict['players'][player_key]['details']['duet_token_pts'] = None
+                    else:
+                        results_dict['players'][player_key]['details']['nectar_pts'] = None
+                        results_dict['players'][player_key]['details']['duet_token_pts'] = None
+                elif scoreboard.version == Version.AE_DUET:
+                    if len(details) == 7:
+                        results_dict['players'][player_key]['details']['nectar_pts'] = None
+                        results_dict['players'][player_key]['details']['duet_token_pts'] = int(details[6])
+                    else:
+                        results_dict['players'][player_key]['details']['nectar_pts'] = None
+                        results_dict['players'][player_key]['details']['duet_token_pts'] = None
+                elif scoreboard.version == Version.AE_DUET_OE:
+                    if len(details) == 8:
+                        results_dict['players'][player_key]['details']['nectar_pts'] = int(details[6])
+                        results_dict['players'][player_key]['details']['duet_token_pts'] = int(details[7])
+                    else:
+                        results_dict['players'][player_key]['details']['nectar_pts'] = None
+                        results_dict['players'][player_key]['details']['duet_token_pts'] = None
 
     results_dict = fixMultipleWingspanNames(results_dict)
 
